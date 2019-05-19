@@ -1,42 +1,34 @@
 package com.example.paualtet.squared;
 
 import android.app.Activity;
+import android.content.Context;
 import android.content.Intent;
+import android.content.SharedPreferences;
+import android.content.pm.ActivityInfo;
 import android.graphics.Color;
 import android.graphics.Typeface;
+import android.os.Build;
 import android.os.Bundle;
 import android.service.quicksettings.Tile;
+import android.support.annotation.RequiresApi;
 import android.support.v7.app.AppCompatActivity;
 import android.util.DisplayMetrics;
+import android.util.Log;
+import android.view.GestureDetector;
 import android.view.Gravity;
+import android.view.MotionEvent;
 import android.view.View;
 import android.widget.Button;
 import android.widget.LinearLayout;
 import android.widget.TextView;
 
+import java.util.PriorityQueue;
 import java.util.Random;
 
-public class GameField extends AppCompatActivity {
+public class GameField extends AppCompatActivity /*implements View.OnTouchListener, GestureDetector.OnGestureListener*/{
 
+    private static final String TAG = "GAMEFIELD";
     private int size = 0;
-    private static final int[] icons = new int[] {
-            R.drawable.blank,
-            R.drawable.icon1,
-            R.drawable.icon2,
-            R.drawable.icon3,
-            R.drawable.icon4,
-            R.drawable.icon5,
-            R.drawable.icon6,
-            R.drawable.icon7,
-            R.drawable.icon8,
-            R.drawable.icon9,
-            R.drawable.icon10,
-            R.drawable.icon11,
-            R.drawable.icon12,
-            R.drawable.icon13,
-            R.drawable.icon14,
-            R.drawable.icon15,
-    };
 
     private int rS;
     private LinearLayout l1;
@@ -46,17 +38,28 @@ public class GameField extends AppCompatActivity {
     private int[] values;
     private int[][] ids;
     private int moves;
+    private boolean solved;
 
-    private static int BLANK_UP = 1, BLANK_DOWN = 2, BLANK_LEFT = 3, BLANK_RIGHT = 4, NO_BLANK = 0;
 
-
+    @RequiresApi(api = Build.VERSION_CODES.N)
     @Override
     protected void onCreate(Bundle savedInstanceState){
+        
+        /*
+        --- Getting Configuration ---
+         */
+        
         super.onCreate(savedInstanceState);
-        setContentView(R.layout.gamefield);
+        setRequestedOrientation(ActivityInfo.SCREEN_ORIENTATION_PORTRAIT);
 
         Bundle extras = getIntent().getExtras();
         size = extras.getInt("size") + 3;
+        
+        /*
+        --- Activity View ---
+         */
+        
+        setContentView(R.layout.gamefield);
 
         LinearLayout l1 = (LinearLayout) findViewById(R.id.fieldLandscape);
         l1.removeAllViews();
@@ -64,15 +67,14 @@ public class GameField extends AppCompatActivity {
         DisplayMetrics dm = new DisplayMetrics();
         getWindowManager().getDefaultDisplay().getMetrics(dm);
 
-        TextView text = (TextView) findViewById(R.id.clicksTxt);
-        text.setText("Size: " + size);
+        updateMoves();
+        updateBestScore();
+        
 
-        width = dm.widthPixels / size;
-        height = (dm.widthPixels - 180) /size;
-
-        if (width > height) rS = height;
-        else rS = width;
-
+        /*
+        --- View Click Behaviours ---
+         */
+        
         Button b = (Button) findViewById(R.id.returnButton);
         b.setOnClickListener(new View.OnClickListener() {
             @Override
@@ -81,53 +83,77 @@ public class GameField extends AppCompatActivity {
             }
         });
 
+        l1.setOnTouchListener(new OnSwipeTouchListener(this){
+            @Override
+            public void onSwipeRight() {
+                moveRight();
+            }
+            @Override
+            public void onSwipeLeft() {
+                moveLeft();
+            }
+            @Override
+            public void onSwipeTop() {
+                moveUp();
+            }
+            @Override
+            public void onSwipeBottom() {
+                moveDown();
+            }
+        });
+
+
+       /*
+        --- Screen Size Computation ---
+         */
+
+        width = (dm.widthPixels-50)/size;
+        height = (dm.heightPixels - findViewById(R.id.linearLayout2).getHeight() - findViewById(R.id.linearLayout3).getHeight())/size;
+
+        Log.d(TAG, "amplada real = " + (dm.widthPixels-100));
+        Log.d(TAG, "alçada real = " + (dm.heightPixels - findViewById(R.id.linearLayout2).getHeight() - findViewById(R.id.linearLayout3).getHeight()));
+
+        Log.d(TAG, "amplada = " + width);
+        Log.d(TAG, "alçada = " + height);
+
+        if (width > height) rS = height;
+        else rS = width;
+
+        Log.d(TAG, "rS =  " + rS);
+
+
+
+
+
+        /*
+        --- Grid Inicialization ---
+         */
+        
         init();
-        //tv = new TileView();
-    }
-
-    private void init(){
-
-        nbTiles = size*size -1;
-        values = new int[size*size];
-        ids = new int[size][size];
-
-        for (int i = 0; i < values.length; i++){
-            values[i] = (i+1)%values.length;
-        }
-
-        moves = 0;
-
-        LinearLayout l1 = (LinearLayout) findViewById(R.id.fieldLandscape);
-
         shuffle();
-
-
-        int value, id = 0;
+        display();
 
         for (int i = 0; i < size; i++){
-            LinearLayout l2 = new LinearLayout(this);
-            l2.setOrientation(LinearLayout.HORIZONTAL);
-            l2.setGravity(Gravity.CENTER);
-
             for (int j = 0; j < size; j++){
-
-                value = values[i*size + j];
-                TileView tv = new TileView(this, i, j, value, icons[value]);
-                id++;
-                tv.setId(id);
-                ids[i][j] = id;
-                tv.setHeight(rS);
-                tv.setWidth(rS);
-                tv.setOnClickListener(new View.OnClickListener() {
-                    public void onClick(View view){
-                        hasClick(((TileView)view).x, ((TileView)view).y);
-                    }
-                });
-                l2.addView(tv);
+                TileView tv = (TileView) findViewById(ids[i][j]);
+                Log.d(TAG, "tv: " + tv.value + " " + tv.getWidth());
             }
-            l1.addView(l2);
+        }
+    }
+
+    private void init() {
+
+        nbTiles = size * size - 1;
+        values = new int[size * size];
+        ids = new int[size][size];
+
+        for (int i = 0; i < values.length; i++) {
+            values[i] = (i + 1) % values.length;
         }
 
+        solved = false;
+
+        moves = 0;
     }
 
     private void shuffle(){
@@ -144,61 +170,160 @@ public class GameField extends AppCompatActivity {
         } while (!isSolvable());
     }
 
-    public void hasClick(int x, int y){
+    private void display() {
 
-        TextView tv = (TextView) findViewById(R.id.clicksTxt);
+        LinearLayout l1 = (LinearLayout) findViewById(R.id.fieldLandscape);
+        
+        int value, id = 0;
 
-        if (!solved()) {
-            tv.setText("Moves: " + moves);
-            move(x, y);
+        for (int i = 0; i < size; i++){
+            LinearLayout l2 = new LinearLayout(this);
+            l2.setOrientation(LinearLayout.HORIZONTAL);
+            l2.setGravity(Gravity.CENTER);
+
+            for (int j = 0; j < size; j++){
+
+                value = values[i*size + j];
+                TileView tv = new TileView(this, i, j, value);
+                
+                id++;
+                tv.setId(id);
+                ids[i][j] = id;
+                tv.setOnTouchListener(new OnSwipeTouchListener(this){
+                    @Override
+                    public void onSwipeRight() {
+                        moveRight();
+                    }
+                    @Override
+                    public void onSwipeLeft() {
+                        moveLeft();
+                    }
+                    @Override
+                    public void onSwipeTop() {
+                        moveUp();
+                    }
+                    @Override
+                    public void onSwipeBottom() {
+                        moveDown();
+                    }
+                });
+
+                LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(rS, rS);
+                tv.setLayoutParams(params);
+
+                l2.addView(tv);
+            }
+            l1.addView(l2);
         }
 
-        if (solved()){
-            tv.setTextColor(Color.RED);
-            tv.setTypeface(null, Typeface.BOLD);
-            tv.setText("WIN Moves:" + moves);
+    }
+
+    public void moveRight(){
+        Log.d(TAG, "moveRight: called");
+
+        if (!solved){
+            TileView tv = (TileView) findViewById(idBlank());
+            int x = tv.x;
+            int y = tv.y;
+
+            if (y > 0) {
+                switchTiles(x, y, x, y - 1);
+                moves++;
+                updateMoves();
+                checkSolved();
+            }
         }
     }
 
-    public void move(int x, int y){
-        int action = scanPosition(x, y);
-        switch (action){
-            case 1: //blank up
-                switchTiles(x, y, x+1, y);
-                moves++;
-                break;
+    public void moveLeft() {
+        Log.d(TAG, "moveLeft: called");
 
-            case 2: //blank down
-                switchTiles(x, y, x-1, y);
-                moves++;
-                break;
+        if (!solved) {
+            TileView tv = (TileView) findViewById(idBlank());
+            int x = tv.x;
+            int y = tv.y;
 
-            case 3: //blank left
-                switchTiles(x, y, x, y-1);
+            if (y < size - 1) {
+                switchTiles(x, y, x, y + 1);
                 moves++;
-                break;
-
-            case 4: //blank right
-                switchTiles(x, y, x, y+1);
-                moves++;
-                break;
+                updateMoves();
+                checkSolved();
+            }
         }
     }
 
-    public int scanPosition(int x, int y){
-        if (x > 0){
-            if (getValue(ids[x-1][y]) == 0) return BLANK_DOWN;
+    public void moveUp() {
+        Log.d(TAG, "moveUp: called");
+
+        if (!solved) {
+            TileView tv = (TileView) findViewById(idBlank());
+            int x = tv.x;
+            int y = tv.y;
+
+            if (x < size - 1) {
+                switchTiles(x, y, x + 1, y);
+                moves++;
+                updateMoves();
+                checkSolved();
+            }
         }
-        if (x < size -1){
-            if (getValue(ids[x+1][y]) == 0) return BLANK_UP;
+    }
+
+    public void moveDown() {
+        Log.d(TAG, "moveDown: called");
+
+        if (!solved) {
+            TileView tv = (TileView) findViewById(idBlank());
+            int x = tv.x;
+            int y = tv.y;
+
+            if (x > 0) {
+                switchTiles(x, y, x - 1, y);
+                moves++;
+                updateMoves();
+                checkSolved();
+            }
         }
-        if (y > 0){
-            if (getValue(ids[x][y-1]) == 0) return BLANK_LEFT;
+    }
+
+    public void updateMoves() {
+        TextView text = (TextView) findViewById(R.id.clicksTxt);
+        text.setText("Moves: " + moves);
+    }
+
+    public void updateBestScore() {
+        TextView tv = (TextView) findViewById(R.id.minSteps);
+        String key;
+        switch(size){
+            case 3:
+                key = "topScore3";
+                break;
+            case 4:
+                key = "topScore4";
+                break;
+            case 5:
+                key = "topScore5";
+                break;
+            case 6:
+                key = "topScore6";
+                break;
+            default:
+                key = "topScore0";
+                break;
+        };
+
+        SharedPreferences myScore = getSharedPreferences("TopScore", Context.MODE_PRIVATE);
+        int bestScore = myScore.getInt(key, 0);
+        if (bestScore != 0) tv.setText("Best Score: " + bestScore);
+    }
+
+    public int idBlank(){
+        for (int i = 0; i < size; i++){
+            for (int j = 0; j < size; j++){
+                if (getValue(ids[i][j]) == 0) return ids[i][j];
+            }
         }
-        if (y < size -1){
-            if (getValue(ids[x][y+1]) == 0) return BLANK_RIGHT;
-        }
-        return NO_BLANK;
+        return 0;
     }
 
     public int getValue(int id){
@@ -211,19 +336,14 @@ public class GameField extends AppCompatActivity {
         TileView t1 = (TileView) findViewById(ids[x1][y1]);
         TileView t2 = (TileView) findViewById(ids[x2][y2]);
 
-        int tempB, tempV;
+        int tempV;
 
-        tempB = t1.background;
         tempV = t1.value;
-
         t1.value = t2.value;
-        t1.background = t2.background;
-        t1.setBackgroundResource(t1.background);
-
-        t2.background = tempB;
         t2.value = tempV;
-        t2.setBackgroundResource(t2.background);
 
+        t1.updateTile();
+        t2.updateTile();
     }
 
     public boolean isSolvable(){
@@ -240,16 +360,39 @@ public class GameField extends AppCompatActivity {
         return inversions%2 == 0;
     }
 
-    public boolean solved(){
+    public void checkSolved(){
 
         for (int i = 0; i < size; i++){
             for (int j = 0; j < size; j++){
                 int value = getValue(ids[i][j]);
                 int expected = i*size +j+1;
-                if (value != expected%values.length) return false;
+                if (value != expected%values.length){
+                    solved = false;
+                    return;
+                }
             }
         }
-        return true;
+        solved = true;
+        saveScore();
+    }
+
+    public void saveScore(){
+        SharedPreferences myScore = getSharedPreferences("TopScore", Context.MODE_PRIVATE);
+        SharedPreferences.Editor editor = myScore.edit();
+        String key;
+        switch (size){
+            case 3:
+                key = "topScore3";
+                break;
+            default:
+                key = "topScore4";
+                break;
+        }
+            int bestScore = myScore.getInt(key, 0);
+            if (moves < bestScore || bestScore == 0){
+                editor.putInt(key, moves);
+                editor.commit();
+            }
     }
 
     public void exit(){
@@ -257,4 +400,5 @@ public class GameField extends AppCompatActivity {
         Intent i = new Intent(this, GameConfig.class);
         startActivity(i);
     }
+    
 }
